@@ -1,4 +1,4 @@
-package org.example;
+package plc.homework;
 
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.params.ParameterizedTest;
