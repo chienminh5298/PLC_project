@@ -52,71 +52,87 @@ public final class Parser {
      * next tokens start a field, aka {@code LET}.
      */
     public Ast.Field parseField() throws ParseException {
-        if (!match("LET")) {
-            throw new ParseException("Expected LET token", tokens.get(0).getIndex());
-        }
+        Ast.Stmt.Declaration declaration = parseDeclarationStatement();
 
-        Token name = tokens.get(0);
-        if (!match(Token.Type.IDENTIFIER)) {
-            throw new ParseException("Expected identifier", name.getIndex());
+        // Check if the declaration has a type
+        if (declaration instanceof Ast.Stmt.Declaration) {
+            return new Ast.Field(declaration.getName(), declaration.getValue());
+        } else {
+            throw new ParseException("Invalid field declaration", tokens.get(0).getIndex());
         }
-
-        Optional<Ast.Expr> value = Optional.empty();
-        if (match("=")) {
-            value = Optional.of(parseExpression());
-        }
-
-        if (!match(";")) {
-            throw new ParseException("Expected semicolon", tokens.get(0).getIndex());
-        }
-
-        return new Ast.Field(name.getLiteral(), value);
     }
+
+
+
 
     /**
      * Parses the {@code method} rule. This method should only be called if the
      * next tokens start a method, aka {@code DEF}.
      */
+
     public Ast.Method parseMethod() throws ParseException {
-        if (!match("DEF")) {
-            throw new ParseException("Expected DEF", tokens.get(0).getIndex());
-        }
+        if (match(Token.Type.IDENTIFIER)) {
+            String functionName = tokens.get(-1).getLiteral();
 
-        Token name = tokens.get(0);
-        if (!match(Token.Type.IDENTIFIER)) {
-            throw new ParseException("Expected identifier", name.getIndex());
-        }
+            if (match("(")) {
+                List<String> params = new ArrayList<>();
+                List<String> paramTypes = new ArrayList<>();
 
-        if (!match("(")) {
-            throw new ParseException("Expected '('", tokens.get(0).getIndex());
-        }
+                // get all params
+                while (match(Token.Type.IDENTIFIER)) {
+                    params.add(tokens.get(-1).getLiteral());
 
-        List<String> parameters = new ArrayList<>();
-        if (!peek(")")) {
-            do {
-                Token param = tokens.get(0);
-                if (!match(Token.Type.IDENTIFIER)) {
-                    throw new ParseException("Expected parameter name", param.getIndex());
+                    if (match(":", Token.Type.IDENTIFIER)) {
+                        // Type is required
+                        paramTypes.add(tokens.get(-1).getLiteral());
+                    } else {
+                        // Type not found, throw ParseException directly
+                        throw new ParseException("Type not found while parsing method parameters", tokens.get(0).getIndex());
+                    }
+
+                    if (!match(",")) {
+                        if (!peek(")")) {
+                            throw new ParseException("Expected comma between identifiers", tokens.get(0).getIndex());
+                        }
+                    }
                 }
-                parameters.add(param.getLiteral());
-            } while (match(","));
-        }
 
-        if (!match(")")) {
-            throw new ParseException("Expected ')'", tokens.get(0).getIndex());
-        }
+                // check for closing parenthesis
+                if (!match(")")) {
+                    throw new ParseException("Expected Parenthesis", tokens.get(0).getIndex());
+                }
 
-        if (!match("{")) {
-            throw new ParseException("Expected '{'", tokens.get(0).getIndex());
-        }
+                Optional<String> returnType = Optional.empty();
+                // check for return type
+                if (match(":", Token.Type.IDENTIFIER)) {
+                    returnType = Optional.of(tokens.get(-1).getLiteral());
+                }
 
-        List<Ast.Stmt> statements = new ArrayList<>();
-        while (!match("}")) {
-            statements.add(parseStatement());
-        }
+                // check for DO
+                if (!match("DO")) {
+                    throw new ParseException("Expected DO statement", tokens.get(0).getIndex());
+                }
 
-        return new Ast.Method(name.getLiteral(), parameters, statements);
+                // get all statements
+                List<Ast.Stmt> statements = new ArrayList<>();
+                while (!match("END") && tokens.has(0)) {
+                    statements.add(parseStatement());
+                }
+
+                if (!tokens.get(-1).getLiteral().equals("END")) {
+                    throw new ParseException("Missing END", tokens.get(-1).getIndex());
+                }
+
+                // Return only the parameters accepted by Ast.Method constructor
+                return new Ast.Method(functionName, params, statements);
+            } else {
+                throw new ParseException("Expected Parenthesis", tokens.get(0).getIndex());
+            }
+        } else {
+            throw new ParseException("Expected Identifier", tokens.get(0).getIndex());
+        }
     }
+
 
     /**
      * Parses the {@code statement} rule and delegates to the necessary method.
@@ -182,26 +198,48 @@ public final class Parser {
      * {@code IF}.
      */
     public Ast.Stmt.If parseIfStatement() throws ParseException {
+        // Parse the condition expression for the IF statement
         Ast.Expr condition = parseExpression();
-        List<Ast.Stmt> thenStatements = new ArrayList<>();
-        List<Ast.Stmt> elseStatements = new ArrayList<>();
-        if (!match("THEN")) {
-            throw new ParseException("No THEN", tokens.index);
-        }
 
-        while (!match("END")) {
+        // Check for the 'DO' keyword to start the 'IF' statement body
+        if (match("DO")) {
+            boolean isElse = false; // Flag to track if 'ELSE' block is encountered
+            List<Ast.Stmt> doStatements = new ArrayList<>(); // Statements in the 'DO' block
+            List<Ast.Stmt> elseStatements = new ArrayList<>(); // Statements in the 'ELSE' block
 
-            thenStatements.add(parseStatement());
-
-            if (match("ELSE")) {
-                while (!match("END")) {
-                    elseStatements.add(parseStatement());
+            // Parse the statements inside the 'DO' and 'ELSE' blocks
+            while (!match("END") && tokens.has(0)) {
+                // Check for 'ELSE' keyword
+                if (match("ELSE")) {
+                    // If 'ELSE' is encountered after another 'ELSE', throw an error
+                    if (!isElse) {
+                        isElse = true;
+                    } else {
+                        throw new ParseException("Too many 'ELSE' statements", tokens.get(0).getIndex());
+                    }
                 }
-                break;
+
+                // Add statements to the correct block based on the 'isElse' flag
+                if (isElse) {
+                    elseStatements.add(parseStatement());
+                } else {
+                    doStatements.add(parseStatement());
+                }
             }
+
+            // Ensure the 'IF' statement ends with 'END'
+            if (!tokens.get(-1).getLiteral().equals("END")) {
+                throw new ParseException("Missing 'END' to close the 'IF' statement", tokens.get(-1).getIndex());
+            }
+
+            // Return the 'IF' statement node with the condition, 'DO' statements, and optional 'ELSE' statements
+            return new Ast.Stmt.If(condition, doStatements, elseStatements);
         }
-        return new Ast.Stmt.If(condition, thenStatements, elseStatements);
+
+        // If 'DO' keyword is not found, throw an error
+        throw new ParseException("Expected 'DO' to start the 'IF' statement body", tokens.get(0).getIndex());
     }
+
 
     /**
      * Parses a for statement from the {@code statement} rule. This method
@@ -209,29 +247,42 @@ public final class Parser {
      * {@code FOR}.
      */
     public Ast.Stmt.For parseForStatement() throws ParseException {
-        match("FOR");
+        // Check for loop variable identifier
+        if (match(Token.Type.IDENTIFIER)) {
+            String name = tokens.get(-1).getLiteral();
 
-        Token name = tokens.get(0);
-        if (!match(Token.Type.IDENTIFIER)) {
-            throw new ParseException("Expected identifier", name.getIndex());
+            // Check for 'IN' keyword
+            if (!match("IN")) {
+                throw new ParseException("Expected 'IN' after loop variable", tokens.get(0).getIndex());
+            }
+
+            // Parse the expression for the iterable part
+            Ast.Expr expression = parseExpression();
+
+            // Check for 'DO' keyword before the loop body
+            if (!match("DO")) {
+                throw new ParseException("Expected 'DO' to start the 'FOR' loop body", tokens.get(0).getIndex());
+            }
+
+            // Parse the statements inside the 'FOR' loop body
+            List<Ast.Stmt> statements = new ArrayList<>();
+            while (!match("END") && tokens.has(0)) {
+                statements.add(parseStatement());
+            }
+
+            // Ensure the loop ends with 'END'
+            if (!tokens.get(-1).getLiteral().equals("END")) {
+                throw new ParseException("Missing 'END' to close the 'FOR' loop body", tokens.get(-1).getIndex());
+            }
+
+            // Return the 'FOR' statement node with the loop variable, iterable expression, and body statements
+            return new Ast.Stmt.For(name, expression, statements);
         }
 
-        if (!match("IN")) {
-            throw new ParseException("Expected 'IN'", tokens.get(0).getIndex());
-        }
-
-        Ast.Expr value = parseExpression();
-        if (!match("{")) {
-            throw new ParseException("Expected '{'", tokens.get(0).getIndex());
-        }
-
-        List<Ast.Stmt> statements = new ArrayList<>();
-        while (!match("}")) {
-            statements.add(parseStatement());
-        }
-
-        return new Ast.Stmt.For(name.getLiteral(), value, statements);
+        // If no loop variable identifier found, throw an exception
+        throw new ParseException("Expected loop variable identifier", tokens.get(0).getIndex());
     }
+
 
     /**
      * Parses a while statement from the {@code statement} rule. This method
@@ -459,8 +510,6 @@ public final class Parser {
     }
 
 
-
-
     /**
      * As in the lexer, returns {@code true} if the current sequence of tokens
      * matches the given patterns. Unlike the lexer, the pattern is not a regex;
@@ -472,7 +521,6 @@ public final class Parser {
      * {@code peek(Token.Type.IDENTIFIER)} and {@code peek("literal")}.
      */
     private boolean peek(Object... patterns) {
-
         for (int i = 0; i < patterns.length; i++) {
             if (!tokens.has(i)) {
                 return false;
@@ -485,7 +533,7 @@ public final class Parser {
                     return false;
                 }
             } else {
-                throw new AssertionError();
+                throw new AssertionError("Unexpected pattern: " + patterns[i]);
             }
         }
         return true;
@@ -496,15 +544,13 @@ public final class Parser {
      * and advances the token stream.
      */
     private boolean match(Object... patterns) {
-
-        boolean peek = peek(patterns);
-        if (peek) {
+        if (peek(patterns)) {
             for (int i = 0; i < patterns.length; i++) {
                 tokens.advance();
             }
+            return true;
         }
-        return peek;
-
+        return false;
     }
 
     private static final class TokenStream {
