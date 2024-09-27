@@ -273,21 +273,47 @@ public final class Parser {
      * Parses the {@code expression} rule.
      */
     public Ast.Expr parseExpression() throws ParseException {
-        return parseEqualityExpression();
+        try {
+            return parseLogicalExpression();
+        } catch (ParseException exception) {
+            throw new ParseException(exception.getMessage(), exception.getIndex());
+        }
+    }
+
+    public Ast.Expr parseLogicalExpression() throws ParseException {
+        try {
+            Ast.Expr currentExpr = parseEqualityExpression();
+            while (match("AND") || match("OR")) { // Check for logical operators
+                String operator = tokens.get(-1).getLiteral();
+                if (!tokens.has(0)) { // Ensure there is a following operand
+                    throw new ParseException("Operand missing for logical operator", tokens.index);
+                }
+                Ast.Expr rightOperand = parseEqualityExpression();
+                currentExpr = new Ast.Expr.Binary(operator, currentExpr, rightOperand);
+            }
+            return currentExpr;
+        } catch (ParseException exception) {
+            throw new ParseException(exception.getMessage(), exception.getIndex());
+        }
     }
 
     /**
      * Parses the {@code equality-expression} rule.
      */
     public Ast.Expr parseEqualityExpression() throws ParseException {
-        Ast.Expr left = parseAdditiveExpression();
-        while (match("==") || match("!=") || match("AND") || match("OR")) {
-            String operator = tokens.get(-1).getLiteral();
-            Ast.Expr right = parseAdditiveExpression();
-            left = new Ast.Expr.Binary(operator, left, right);
+        try {
+            Ast.Expr currentExpr = parseAdditiveExpression();
+            while (match("!=") || match("==") || match(">=") || match(">") || match("<=") || match("<")) {
+                String operator = tokens.get(-1).getLiteral();
+                Ast.Expr rightOperand = parseEqualityExpression();
+                currentExpr = new Ast.Expr.Binary(operator, currentExpr, rightOperand);
+            }
+            return currentExpr;
+        } catch (ParseException exception) {
+            throw new ParseException(exception.getMessage(), exception.getIndex());
         }
-        return left;
     }
+
 
     /**
      * Parses the {@code additive-expression} rule.
@@ -333,21 +359,35 @@ public final class Parser {
      * not strictly necessary.
      */
     public Ast.Expr parsePrimaryExpression() throws ParseException {
-        // Existing cases
+        // Handle boolean literal 'TRUE'
         if (match("TRUE")) {
             return new Ast.Expr.Literal(Boolean.TRUE);
-        } else if (match("FALSE")) {
+        }
+        // Handle boolean literal 'FALSE'
+        else if (match("FALSE")) {
             return new Ast.Expr.Literal(Boolean.FALSE);
-        } else if (match(Token.Type.DECIMAL)) {
+        }
+        // Handle the 'NIL' literal
+        else if (match("NIL")) {
+            return new Ast.Expr.Literal(null);
+        }
+        // Handle decimal literals
+        else if (match(Token.Type.DECIMAL)) {
             return new Ast.Expr.Literal(new BigDecimal(tokens.get(-1).getLiteral()));
-        } else if (match(Token.Type.STRING)) {
+        }
+        // Handle string literals
+        else if (match(Token.Type.STRING)) {
             String literal = tokens.get(-1).getLiteral();
             literal = literal.substring(1, literal.length() - 1); // Removing quotes
             literal = processEscapeSequences(literal); // Process escape sequences
             return new Ast.Expr.Literal(literal);
-        } else if (match(Token.Type.INTEGER)) {
+        }
+        // Handle integer literals
+        else if (match(Token.Type.INTEGER)) {
             return new Ast.Expr.Literal(new BigInteger(tokens.get(-1).getLiteral()));
-        } else if (match(Token.Type.CHARACTER)) { // Add this case for character literals
+        }
+        // Handle character literals
+        else if (match(Token.Type.CHARACTER)) { // Add this case for character literals
             String literal = tokens.get(-1).getLiteral();
             if (literal.length() == 3 && literal.startsWith("'") && literal.endsWith("'")) {
                 char character = literal.charAt(1); // Extract the character between the single quotes
@@ -355,13 +395,14 @@ public final class Parser {
             } else {
                 throw new ParseException("Invalid character literal", tokens.get(-1).getIndex());
             }
-        } else if (match(Token.Type.IDENTIFIER)) {
-            // Handle identifiers, which could be variable access or function calls.
+        }
+        // Handle identifiers, which could be variable access or function calls
+        else if (match(Token.Type.IDENTIFIER)) {
             String name = tokens.get(-1).getLiteral();
             Ast.Expr expr = new Ast.Expr.Access(Optional.empty(), name);
 
             // Handle field access or function calls
-            while (match(".")) {  // Check for field access
+            while (match(".")) { // Check for field access
                 Token fieldName = tokens.get(0);
                 if (!match(Token.Type.IDENTIFIER)) {
                     throw new ParseException("Expected identifier after '.'", fieldName.getIndex());
@@ -370,13 +411,13 @@ public final class Parser {
                 // If followed by '(', it's a method call
                 if (match("(")) {
                     List<Ast.Expr> arguments = new ArrayList<>();
-                    if (!match(")")) {  // Function has arguments
+                    if (!match(")")) { // Function has arguments
                         arguments.add(parseExpression());
                         while (match(",")) {
                             arguments.add(parseExpression());
                         }
                         if (!match(")")) {
-                            throw new ParseException("Expected closing parentheses", tokens.get(-1).getIndex());
+                            throw new ParseException("Expected closing parenthesis", tokens.get(-1).getIndex());
                         }
                     }
                     return new Ast.Expr.Function(Optional.of(expr), fieldName.getLiteral(), arguments);
@@ -387,32 +428,38 @@ public final class Parser {
             }
 
             // Check for a function call after the initial identifier (no field access)
-            if (match("(")) {  // This indicates a function call
+            if (match("(")) { // This indicates a function call
                 List<Ast.Expr> arguments = new ArrayList<>();
-                if (!match(")")) {  // Function has arguments
+                if (!match(")")) { // Function has arguments
                     arguments.add(parseExpression());
                     while (match(",")) {
                         arguments.add(parseExpression());
                     }
                     if (!match(")")) {
-                        throw new ParseException("Expected closing parentheses", tokens.get(-1).getIndex());
+                        throw new ParseException("Expected closing parenthesis", tokens.get(-1).getIndex());
                     }
                 }
                 return new Ast.Expr.Function(Optional.empty(), name, arguments);
             }
 
-            return expr;  // Return the Access expression if no function call
-        } else if (match("(")) {
-            // Handle grouped expressions (expressions within parentheses)
+            return expr; // Return the Access expression if no function call
+        }
+        // Handle grouped expressions (expressions within parentheses)
+        else if (match("(")) {
             Ast.Expr expression = parseExpression();
             if (!match(")")) {
-                throw new ParseException("Unclosed expression", tokens.get(0).getIndex());
+                throw new ParseException("Expected closing parenthesis", tokens.get(-1).getIndex());
             }
             return new Ast.Expr.Group(expression);
-        } else {
+        }
+        // Handle invalid primary expression tokens
+        else {
             throw new ParseException("Invalid primary expression token", tokens.get(0).getIndex());
         }
     }
+
+
+
 
     /**
      * As in the lexer, returns {@code true} if the current sequence of tokens

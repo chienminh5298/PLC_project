@@ -95,9 +95,14 @@ final class ParserExpressionTests {
                 Arguments.of("Escape Character",
                         Arrays.asList(new Token(Token.Type.STRING, "\"Hello,\\nWorld!\"", 0)),
                         new Ast.Expr.Literal("Hello,\nWorld!")
+                ),
+                Arguments.of("Nil Literal",
+                        Arrays.asList(new Token(Token.Type.IDENTIFIER, "NIL", 0)),
+                        new Ast.Expr.Literal(null)
                 )
         );
     }
+
 
     @ParameterizedTest
     @MethodSource
@@ -129,6 +134,12 @@ final class ParserExpressionTests {
                                 new Ast.Expr.Access(Optional.empty(), "expr1"),
                                 new Ast.Expr.Access(Optional.empty(), "expr2")
                         ))
+                ),
+                Arguments.of("Missing closing parenthesis",
+                        Arrays.asList(
+                                new Token(Token.Type.OPERATOR, "(", 0),
+                                new Token(Token.Type.IDENTIFIER, "abc", 1)
+                        ), null
                 )
         );
     }
@@ -164,6 +175,28 @@ final class ParserExpressionTests {
                                 new Ast.Expr.Access(Optional.empty(), "expr1"),
                                 new Ast.Expr.Access(Optional.empty(), "expr2")
                         )
+                ),
+                Arguments.of("Binary: <",
+                        Arrays.asList(
+                                // expr1 < expr2 < expr3
+                                new Token(Token.Type.IDENTIFIER, "expr1", 0),
+                                new Token(Token.Type.OPERATOR, "<=", 6),
+                                new Token(Token.Type.IDENTIFIER, "expr2", 7),
+                                new Token(Token.Type.OPERATOR, "<", 12),
+                                new Token(Token.Type.IDENTIFIER, "expr3", 3)
+                        ),
+                        new Ast.Expr.Binary("<=",
+                                new Ast.Expr.Access(Optional.empty(), "expr1"),
+                                new Ast.Expr.Binary("<",
+                                        new Ast.Expr.Access(Optional.empty(), "expr2"),
+                                        new Ast.Expr.Access(Optional.empty(), "expr3")))
+                ),
+                Arguments.of("Missing Operands",
+                        Arrays.asList(
+                                new Token(Token.Type.IDENTIFIER, "expr1", 0),
+                                new Token(Token.Type.IDENTIFIER, "AND", 6)
+                        ),
+                        null
                 ),
                 Arguments.of("Binary Addition",
                         Arrays.asList(
