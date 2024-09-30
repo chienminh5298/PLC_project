@@ -8,7 +8,6 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Objects;
 import java.math.RoundingMode;
-import java.util.stream.IntStream;
 
 public class Interpreter implements Ast.Visitor<Environment.PlcObject> {
 
