@@ -22,6 +22,117 @@ final class ParserTests {
 
     @ParameterizedTest
     @MethodSource
+    void testWhileStatementWithMissingDo(String test, List<Token> tokens) {
+        test(tokens, null, Parser::parseStatement);
+    }
+
+    private static Stream<Arguments> testWhileStatementWithMissingDo() {
+        return Stream.of(
+                Arguments.of("While Missing DO",
+                        Arrays.asList(
+                                //WHILE expr (Missing DO)
+                                new Token(Token.Type.IDENTIFIER, "WHILE", 0),
+                                new Token(Token.Type.IDENTIFIER, "expr", 6)
+                                // DO is missing
+                        )
+                )
+        );
+    }
+
+
+    @ParameterizedTest
+    @MethodSource
+    void testGroupExpressionWithMissingClosingParenthesis(String test, List<Token> tokens) {
+        test(tokens, null, Parser::parseExpression);
+    }
+
+    private static Stream<Arguments> testGroupExpressionWithMissingClosingParenthesis() {
+        return Stream.of(
+                Arguments.of("Missing Closing Parenthesis",
+                        Arrays.asList(
+                                //(expr (Missing closing parenthesis)
+                                new Token(Token.Type.OPERATOR, "(", 0),
+                                new Token(Token.Type.IDENTIFIER, "expr", 1)
+                                // Closing parenthesis is missing
+                        )
+                )
+        );
+    }
+
+
+    @ParameterizedTest
+    @MethodSource
+    void testIncorrectOperatorPrecedence(String test, List<Token> tokens, Ast.Expr.Binary expected) {
+        test(tokens, expected, Parser::parseExpression);
+    }
+
+    private static Stream<Arguments> testIncorrectOperatorPrecedence() {
+        return Stream.of(
+                Arguments.of("Incorrect Operator Precedence",
+                        Arrays.asList(
+                                //expr1 == expr2 != expr3
+                                new Token(Token.Type.IDENTIFIER, "expr1", 0),
+                                new Token(Token.Type.OPERATOR, "==", 6),
+                                new Token(Token.Type.IDENTIFIER, "expr2", 9),
+                                new Token(Token.Type.OPERATOR, "!=", 14),
+                                new Token(Token.Type.IDENTIFIER, "expr3", 17)
+                        ),
+                        // Expected precedence error: expr1 == (expr2 != expr3)
+                        new Ast.Expr.Binary("==",
+                                new Ast.Expr.Access(Optional.empty(), "expr1"),
+                                new Ast.Expr.Binary("!=",
+                                        new Ast.Expr.Access(Optional.empty(), "expr2"),
+                                        new Ast.Expr.Access(Optional.empty(), "expr3")
+                                )
+                        )
+                )
+        );
+    }
+
+
+    @ParameterizedTest
+    @MethodSource
+    void testBinaryExpressionWithMissingOperand(String test, List<Token> tokens) {
+        test(tokens, null, Parser::parseExpression);
+    }
+
+    private static Stream<Arguments> testBinaryExpressionWithMissingOperand() {
+        return Stream.of(
+                Arguments.of("Binary Expression Missing Operand",
+                        Arrays.asList(
+                                //expr1 == (missing expr2)
+                                new Token(Token.Type.IDENTIFIER, "expr1", 0),
+                                new Token(Token.Type.OPERATOR, "==", 6)
+                                // expr2 is missing
+                        )
+                )
+        );
+    }
+
+    @ParameterizedTest
+    @MethodSource
+    void testWhileStatementWithMissingEnd(String test, List<Token> tokens) {
+        test(tokens, null, Parser::parseStatement);
+    }
+
+    private static Stream<Arguments> testWhileStatementWithMissingEnd() {
+        return Stream.of(
+                Arguments.of("While Missing End",
+                        Arrays.asList(
+                                //WHILE expr DO stmt; (Missing END)
+                                new Token(Token.Type.IDENTIFIER, "WHILE", 0),
+                                new Token(Token.Type.IDENTIFIER, "expr", 6),
+                                new Token(Token.Type.IDENTIFIER, "DO", 11),
+                                new Token(Token.Type.IDENTIFIER, "stmt", 14),
+                                new Token(Token.Type.OPERATOR, ";", 18)
+                                // END is missing
+                        )
+                )
+        );
+    }
+
+    @ParameterizedTest
+    @MethodSource
     void testSource(String test, List<Token> tokens, Ast.Source expected) {
         test(tokens, expected, Parser::parseSource);
     }

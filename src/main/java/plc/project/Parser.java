@@ -298,6 +298,9 @@ public final class Parser {
         }
 
         while (!match("END")) {
+            if (!tokens.has(0)) {
+                throw new ParseException("Expected 'END' but found end of input.", tokens.get(-1).getIndex());
+            }
             statements.add(parseStatement());
         }
 
@@ -371,27 +374,71 @@ public final class Parser {
      */
     public Ast.Expr parseAdditiveExpression() throws ParseException {
         Ast.Expr left = parseMultiplicativeExpression();
+
         while (match("+") || match("-")) {
             String operator = tokens.get(-1).getLiteral();
+
+            if (!tokens.has(0)) {
+                throw new ParseException("Expected right operand after '" + operator + "'", tokens.get(-1).getIndex());
+            }
+
             Ast.Expr right = parseMultiplicativeExpression();
             left = new Ast.Expr.Binary(operator, left, right);
         }
+
         return left;
     }
+
 
     /**
      * Parses the {@code multiplicative-expression} rule.
      */
     public Ast.Expr parseMultiplicativeExpression() throws ParseException {
-        Ast.Expr left = parsePrimaryExpression();
-        while (match("*") || match("/")) {
-            String operator = tokens.get(-1).getLiteral();
-            Ast.Expr right = parsePrimaryExpression();
-            left = new Ast.Expr.Binary(operator, left, right);
+        Ast.Expr output = parseSecondaryExpression();
+
+        while (match("/") || match("*")) {
+            String operation = tokens.get(-1).getLiteral();
+
+            if (!tokens.has(0)) {
+                throw new ParseException("Expected right operand after '" + operation + "'", tokens.get(-1).getIndex());
+            }
+
+            Ast.Expr rightExpr = parseSecondaryExpression();
+            output = new Ast.Expr.Binary(operation, output, rightExpr);
         }
-        return left;
+
+        return output;
     }
 
+    public Ast.Expr parseSecondaryExpression() throws ParseException {
+        Ast.Expr initialExpr = parsePrimaryExpression();
+
+        while (match(".")) {
+            if (!match(Token.Type.IDENTIFIER)) {
+                throw new ParseException("Invalid Identifier", tokens.get(0).getIndex());
+            }
+
+            String receiver = tokens.get(-1).getLiteral();
+
+            if (!match("(")) {
+                initialExpr = new Ast.Expr.Access(Optional.of(initialExpr), receiver);
+            } else {
+                List<Ast.Expr> args = new ArrayList<>();
+                if (!match(")")) {
+                    args.add(parseExpression());
+                    while (match(",")) {
+                        args.add(parseExpression());
+                    }
+                    if (!match(")")) {
+                        throw new ParseException("Invalid function: closing parentheses not found", tokens.get(0).getIndex());
+                    }
+                }
+                initialExpr = new Ast.Expr.Function(Optional.of(initialExpr), receiver, args);
+            }
+        }
+
+        return initialExpr;
+    }
 
     private String processEscapeSequences(String literal) {
         return literal
@@ -410,105 +457,90 @@ public final class Parser {
      * not strictly necessary.
      */
     public Ast.Expr parsePrimaryExpression() throws ParseException {
-        // Handle boolean literal 'TRUE'
-        if (match("TRUE")) {
-            return new Ast.Expr.Literal(Boolean.TRUE);
-        }
-        // Handle boolean literal 'FALSE'
-        else if (match("FALSE")) {
-            return new Ast.Expr.Literal(Boolean.FALSE);
-        }
-        // Handle the 'NIL' literal
-        else if (match("NIL")) {
+        if (match("NIL")) {
             return new Ast.Expr.Literal(null);
         }
-        // Handle decimal literals
-        else if (match(Token.Type.DECIMAL)) {
-            return new Ast.Expr.Literal(new BigDecimal(tokens.get(-1).getLiteral()));
+        else if (match("TRUE")) {
+            return new Ast.Expr.Literal(true);
         }
-        // Handle string literals
-        else if (match(Token.Type.STRING)) {
-            String literal = tokens.get(-1).getLiteral();
-            literal = literal.substring(1, literal.length() - 1); // Removing quotes
-            literal = processEscapeSequences(literal); // Process escape sequences
-            return new Ast.Expr.Literal(literal);
+        else if (match("FALSE")) {
+            return new Ast.Expr.Literal(false);
         }
-        // Handle integer literals
-        else if (match(Token.Type.INTEGER)) {
+        else if (match(Token.Type.INTEGER)) { // INTEGER LITERAL FOUND
             return new Ast.Expr.Literal(new BigInteger(tokens.get(-1).getLiteral()));
         }
-        // Handle character literals
-        else if (match(Token.Type.CHARACTER)) { // Add this case for character literals
-            String literal = tokens.get(-1).getLiteral();
-            if (literal.length() == 3 && literal.startsWith("'") && literal.endsWith("'")) {
-                char character = literal.charAt(1); // Extract the character between the single quotes
-                return new Ast.Expr.Literal(character);
-            } else {
-                throw new ParseException("Invalid character literal", tokens.get(-1).getIndex());
-            }
+        else if (match(Token.Type.DECIMAL)) { // DECIMAL LITERAL FOUND
+            return new Ast.Expr.Literal(new BigDecimal(tokens.get(-1).getLiteral()));
         }
-        // Handle identifiers, which could be variable access or function calls
-        else if (match(Token.Type.IDENTIFIER)) {
+        else if (match(Token.Type.CHARACTER)) { // CHARACTER LITERAL FOUND
+            String str = tokens.get(-1).getLiteral();
+//            str = str.replace("\\n", "\n")
+//                    .replace("\\t", "\t")
+//                    .replace("\\b", "\b")
+//                    .replace("\\r", "\r")
+//                    .replace("\\'", "'")
+//                    .replace("\\\\", "\\")
+//                    .replace("\\\"", "\"");
+//            if(str.contains("\n") || str.contains("\t") || str.contains("\b") || str.contains("\r") || str.contains("\\") || str.contains("\"") || str.charAt(1) == '\'')
+//                return new Ast.Expr.Literal(str)
+            return new Ast.Expr.Literal(str.charAt(1));
+        }
+        else if (match(Token.Type.STRING)) { // STRING LITERAL FOUND
+            String str = tokens.get(-1).getLiteral();
+            str = str.substring(1, str.length() - 1);
+            if(str.contains("\\")) {
+                str = str.replace("\\n", "\n")
+                        .replace("\\t", "\t")
+                        .replace("\\b", "\b")
+                        .replace("\\r", "\r")
+                        .replace("\\'", "'")
+                        .replace("\\\\", "\\")
+                        .replace("\\\"", "\"");
+            }
+            return new Ast.Expr.Literal(str);
+        }
+        else if (match(Token.Type.IDENTIFIER)) { // IDENTIFIER FOUND
             String name = tokens.get(-1).getLiteral();
-            Ast.Expr expr = new Ast.Expr.Access(Optional.empty(), name);
-
-            // Handle field access or function calls
-            while (match(".")) { // Check for field access
-                Token fieldName = tokens.get(0);
-                if (!match(Token.Type.IDENTIFIER)) {
-                    throw new ParseException("Expected identifier after '.'", fieldName.getIndex());
-                }
-
-                // If followed by '(', it's a method call
-                if (match("(")) {
-                    List<Ast.Expr> arguments = new ArrayList<>();
-                    if (!match(")")) { // Function has arguments
-                        arguments.add(parseExpression());
-                        while (match(",")) {
-                            arguments.add(parseExpression());
-                        }
-                        if (!match(")")) {
-                            throw new ParseException("Expected closing parenthesis", tokens.get(-1).getIndex());
-                        }
-                    }
-                    return new Ast.Expr.Function(Optional.of(expr), fieldName.getLiteral(), arguments);
-                }
-
-                // Otherwise, it's a field access, not a function call
-                expr = new Ast.Expr.Access(Optional.of(expr), fieldName.getLiteral());
+            if (!match("(")) { // no expression after identifier
+                return new Ast.Expr.Access(Optional.empty(), name);
             }
+            else { // expression after identifier
+                if (!match(")")) { // expression arguments found
+                    Ast.Expr initalExpr = parseExpression();
+                    List<Ast.Expr> args = new ArrayList<>();
+                    args.add(initalExpr);
 
-            // Check for a function call after the initial identifier (no field access)
-            if (match("(")) { // This indicates a function call
-                List<Ast.Expr> arguments = new ArrayList<>();
-                if (!match(")")) { // Function has arguments
-                    arguments.add(parseExpression());
                     while (match(",")) {
-                        arguments.add(parseExpression());
+                        args.add(parseExpression());
                     }
-                    if (!match(")")) {
-                        throw new ParseException("Expected closing parenthesis", tokens.get(-1).getIndex());
+
+                    if (match(")")) { // Check closing parentheses
+                        return new Ast.Expr.Function(Optional.empty(), name, args);
+                    } else {
+                        throw new ParseException("Closing parentheses expected", tokens.get(-1).getIndex());
+                    }
+                } else {
+                    if (!tokens.get(-1).getLiteral().equals(")")) {
+                        throw new ParseException("Closing parentheses expected", tokens.get(-1).getIndex());
+                    } else {
+                        return new Ast.Expr.Function(Optional.empty(), name, Collections.emptyList());
                     }
                 }
-                return new Ast.Expr.Function(Optional.empty(), name, arguments);
+
+
             }
 
-            return expr; // Return the Access expression if no function call
-        }
-        // Handle grouped expressions (expressions within parentheses)
-        else if (match("(")) {
-            Ast.Expr expression = parseExpression();
+        } else if (match("(")) {
+            Ast.Expr expr = parseExpression();
             if (!match(")")) {
                 throw new ParseException("Expected closing parenthesis", tokens.get(-1).getIndex());
             }
-            return new Ast.Expr.Group(expression);
-        }
-        // Handle invalid primary expression tokens
-        else {
-            throw new ParseException("Invalid primary expression token", tokens.get(0).getIndex());
+            return new Ast.Stmt.Expr.Group(expr);
+        } else {
+            throw new ParseException("Invalid Primary Expression", tokens.get(-1).getIndex());
+            // TODO: handle storing the actual character index instead of I
         }
     }
-
 
     /**
      * As in the lexer, returns {@code true} if the current sequence of tokens
