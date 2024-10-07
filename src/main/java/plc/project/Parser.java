@@ -63,8 +63,6 @@ public final class Parser {
     }
 
 
-
-
     /**
      * Parses the {@code method} rule. This method should only be called if the
      * next tokens start a method, aka {@code DEF}.
@@ -355,18 +353,25 @@ public final class Parser {
      * Parses the {@code equality-expression} rule.
      */
     public Ast.Expr parseEqualityExpression() throws ParseException {
-        try {
-            Ast.Expr currentExpr = parseAdditiveExpression();
-            while (match("!=") || match("==") || match(">=") || match(">") || match("<=") || match("<")) {
-                String operator = tokens.get(-1).getLiteral();
-                Ast.Expr rightOperand = parseEqualityExpression();
-                currentExpr = new Ast.Expr.Binary(operator, currentExpr, rightOperand);
+        Ast.Expr left = parseAdditiveExpression();
+
+        while (peek(">=") || peek("<") || peek("==") || peek("<=") || peek(">") || peek("!=")) {
+            String operator = tokens.get(0).getLiteral();
+
+            match(Token.Type.OPERATOR);
+
+            Ast.Expr right = parseAdditiveExpression();
+
+            if (!peek(">=") && !peek("<") && !peek("==") && !peek("<=") && !peek(">") && !peek("!=")) {
+                return new Ast.Expr.Binary(operator, left, right);
+            } else {
+                left = new Ast.Expr.Binary(operator, left, right);
             }
-            return currentExpr;
-        } catch (ParseException exception) {
-            throw new ParseException(exception.getMessage(), exception.getIndex());
         }
+
+        return left;
     }
+
 
 
     /**
@@ -459,20 +464,15 @@ public final class Parser {
     public Ast.Expr parsePrimaryExpression() throws ParseException {
         if (match("NIL")) {
             return new Ast.Expr.Literal(null);
-        }
-        else if (match("TRUE")) {
+        } else if (match("TRUE")) {
             return new Ast.Expr.Literal(true);
-        }
-        else if (match("FALSE")) {
+        } else if (match("FALSE")) {
             return new Ast.Expr.Literal(false);
-        }
-        else if (match(Token.Type.INTEGER)) { // INTEGER LITERAL FOUND
+        } else if (match(Token.Type.INTEGER)) { // INTEGER LITERAL FOUND
             return new Ast.Expr.Literal(new BigInteger(tokens.get(-1).getLiteral()));
-        }
-        else if (match(Token.Type.DECIMAL)) { // DECIMAL LITERAL FOUND
+        } else if (match(Token.Type.DECIMAL)) { // DECIMAL LITERAL FOUND
             return new Ast.Expr.Literal(new BigDecimal(tokens.get(-1).getLiteral()));
-        }
-        else if (match(Token.Type.CHARACTER)) { // CHARACTER LITERAL FOUND
+        } else if (match(Token.Type.CHARACTER)) { // CHARACTER LITERAL FOUND
             String str = tokens.get(-1).getLiteral();
 //            str = str.replace("\\n", "\n")
 //                    .replace("\\t", "\t")
@@ -484,11 +484,10 @@ public final class Parser {
 //            if(str.contains("\n") || str.contains("\t") || str.contains("\b") || str.contains("\r") || str.contains("\\") || str.contains("\"") || str.charAt(1) == '\'')
 //                return new Ast.Expr.Literal(str)
             return new Ast.Expr.Literal(str.charAt(1));
-        }
-        else if (match(Token.Type.STRING)) { // STRING LITERAL FOUND
+        } else if (match(Token.Type.STRING)) { // STRING LITERAL FOUND
             String str = tokens.get(-1).getLiteral();
             str = str.substring(1, str.length() - 1);
-            if(str.contains("\\")) {
+            if (str.contains("\\")) {
                 str = str.replace("\\n", "\n")
                         .replace("\\t", "\t")
                         .replace("\\b", "\b")
@@ -498,13 +497,11 @@ public final class Parser {
                         .replace("\\\"", "\"");
             }
             return new Ast.Expr.Literal(str);
-        }
-        else if (match(Token.Type.IDENTIFIER)) { // IDENTIFIER FOUND
+        } else if (match(Token.Type.IDENTIFIER)) { // IDENTIFIER FOUND
             String name = tokens.get(-1).getLiteral();
             if (!match("(")) { // no expression after identifier
                 return new Ast.Expr.Access(Optional.empty(), name);
-            }
-            else { // expression after identifier
+            } else { // expression after identifier
                 if (!match(")")) { // expression arguments found
                     Ast.Expr initalExpr = parseExpression();
                     List<Ast.Expr> args = new ArrayList<>();

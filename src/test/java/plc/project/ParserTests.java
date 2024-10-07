@@ -22,6 +22,35 @@ final class ParserTests {
 
     @ParameterizedTest
     @MethodSource
+    void testEqualityPrecedence(String test, List<Token> tokens, Ast.Expr.Binary expected) {
+        test(tokens, expected, Parser::parseExpression);
+    }
+
+    private static Stream<Arguments> testEqualityPrecedence() {
+        return Stream.of(
+                Arguments.of("Equals Not Equals Precedence",
+                        Arrays.asList(
+                                // expr1 == expr2 != expr3
+                                new Token(Token.Type.IDENTIFIER, "expr1", 0),
+                                new Token(Token.Type.OPERATOR, "==", 6),
+                                new Token(Token.Type.IDENTIFIER, "expr2", 9),
+                                new Token(Token.Type.OPERATOR, "!=", 14),
+                                new Token(Token.Type.IDENTIFIER, "expr3", 17)
+                        ),
+                        // Expected: (expr1 == expr2) != expr3
+                        new Ast.Expr.Binary("!=",
+                                new Ast.Expr.Binary("==",
+                                        new Ast.Expr.Access(Optional.empty(), "expr1"),
+                                        new Ast.Expr.Access(Optional.empty(), "expr2")
+                                ),
+                                new Ast.Expr.Access(Optional.empty(), "expr3")
+                        )
+                )
+        );
+    }
+
+    @ParameterizedTest
+    @MethodSource
     void testWhileStatementWithMissingDo(String test, List<Token> tokens) {
         test(tokens, null, Parser::parseStatement);
     }
